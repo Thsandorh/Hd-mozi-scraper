@@ -95,6 +95,11 @@ function renderHomePage(manifestUrl) {
             border: 1px solid var(--border);
             color: var(--text);
           }
+          .btn-discord {
+            background: linear-gradient(135deg, #5865f2, #4752c4);
+            color: #f4f6ff;
+            box-shadow: 0 10px 24px rgba(88, 101, 242, 0.35);
+          }
           .btn:hover { transform: translateY(-1px); }
           .grid {
             display: grid;
@@ -160,6 +165,7 @@ function renderHomePage(manifestUrl) {
                 <div class="cta-group">
                   <a class="btn btn-primary" href="stremio://install?manifest=${manifestUrl}">Add to Stremio</a>
                   <a class="btn btn-secondary" href="/manifest.json">View Manifest</a>
+                  <a class="btn btn-discord" href="https://discord.gg/wAqzj96Shz" target="_blank" rel="noreferrer">Join Discord</a>
                 </div>
               </div>
               <div class="card">
