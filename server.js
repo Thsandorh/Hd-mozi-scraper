@@ -1272,12 +1272,12 @@ async function extractRpmStream(videoId) {
 
       if (isIpHost || !isRpmDomain) {
         console.log(`🔍 Direct master detected (${host}). Fetching variants and propagating v=${vParam || 'N/A'}`);
+        const refererBase = isIpHost ? CONFIG.rpm.baseUrl : baseOrigin;
         const resp = await fetch(masterUrl, {
           headers: {
             'User-Agent': CONFIG.rpm.userAgent,
-            // Use self-origin headers for IP hosts
-            'Referer': baseOrigin,
-            'Origin': baseOrigin
+            'Referer': refererBase,
+            'Origin': refererBase
           }
         });
         if (resp.ok) {
@@ -1430,6 +1430,13 @@ function buildStreamHeaders(stream) {
       return {
         'User-Agent': CONFIG.hdmozi.userAgent,
         'Referer': 'https://videa.hu/'
+      };
+    }
+    if (stream.source && stream.source.startsWith('rpm')) {
+      return {
+        'User-Agent': CONFIG.rpm.userAgent,
+        'Referer': CONFIG.rpm.baseUrl,
+        'Origin': CONFIG.rpm.baseUrl
       };
     }
     const u = new URL(stream.url);
