@@ -1,4 +1,5 @@
 function renderHomePage(manifestUrl) {
+  const installUrl = `stremio://install?manifest=${encodeURIComponent(manifestUrl)}`;
   return `
     <!DOCTYPE html>
     <html lang="en">
@@ -163,7 +164,7 @@ function renderHomePage(manifestUrl) {
                   automatic RPM extraction and IMDB-based matching.
                 </p>
                 <div class="cta-group">
-                  <a class="btn btn-primary" href="stremio://install?manifest=${manifestUrl}">Add to Stremio</a>
+                  <a class="btn btn-primary" href="${installUrl}">Add to Stremio</a>
                   <a class="btn btn-secondary" href="/manifest.json">View Manifest</a>
                   <a class="btn btn-discord" href="https://discord.gg/wAqzj96Shz" target="_blank" rel="noreferrer">Join Discord</a>
                 </div>
