@@ -483,10 +483,14 @@ async function extractRpmIdFromHdmozi(hdmoziUrl) {
     const html = await response.text();
     console.log(`📄 Got HDMozi HTML (${html.length} chars)`);
     
-    // DEBUG: Save HTML to file to see what we actually get
-    const fs = require('fs');
-    fs.writeFileSync('hdmozi_debug.html', html);
-    console.log(`💾 Saved HTML to hdmozi_debug.html for inspection`);
+    // DEBUG: Save HTML to file when explicitly enabled (use /tmp on serverless)
+    if (process.env.DEBUG_HDMOZI_HTML === '1') {
+      const fs = require('fs');
+      const path = require('path');
+      const debugPath = path.join('/tmp', 'hdmozi_debug.html');
+      fs.writeFileSync(debugPath, html);
+      console.log(`💾 Saved HTML to ${debugPath} for inspection`);
+    }
 
     // 1) Try to extract RPM ID directly from iframe/src
     {
