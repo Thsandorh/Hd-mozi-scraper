@@ -6,16 +6,16 @@ const { subtle } = webcrypto;
 const app = express();
 const PORT = process.env.PORT || 7000;
 
-// CORS middleware for FlixNest compatibility
+// CORS middleware for Stremio compatibility
 app.use(cors());
 app.use(express.json());
 
 // 🔑 CONFIGURATION
 const CONFIG = {
-  // TMDB proxy (x-app-token auth)
+  // TMDB API (direct)
   tmdb: {
-    proxyBaseUrl: process.env.TMDB_PROXY_BASE_URL || 'https://flixnest.app/api/tmdb',
-    appToken: process.env.APP_TOKEN || ''
+    baseUrl: 'https://api.themoviedb.org/3',
+    apiKey: 'ffe7ef8916c61835264d2df68276ddc2'
   },
   
   // HDMozi scraping
@@ -45,14 +45,25 @@ function getAESKey() {
   return hexToBytes(CONFIG.rpm.keyHex);
 }
 
+function tmdbUrl(path, params = {}) {
+  const url = new URL(`${CONFIG.tmdb.baseUrl}${path}`);
+  url.searchParams.set('api_key', CONFIG.tmdb.apiKey);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      url.searchParams.set(key, value);
+    }
+  });
+  return url.toString();
+}
+
 // 🎬 TMDB API FUNCTIONS
 async function getMovieInfoFromImdb(imdbId) {
   try {
     console.log(`🔍 Looking up IMDB ID: ${imdbId}`);
     
-    // Step 1: Find by IMDB ID via FlixNest TMDB proxy
-    const findUrl = `${CONFIG.tmdb.proxyBaseUrl}/find/${imdbId}?external_source=imdb_id`;
-    const findResponse = await fetch(findUrl, { headers: { 'x-app-token': CONFIG.tmdb.appToken } });
+    // Step 1: Find by IMDB ID via TMDB API
+    const findUrl = tmdbUrl(`/find/${imdbId}`, { external_source: 'imdb_id' });
+    const findResponse = await fetch(findUrl);
     
     if (!findResponse.ok) {
       throw new Error(`TMDB find API error: ${findResponse.status}`);
@@ -106,8 +117,8 @@ async function getMovieInfoFromImdb(imdbId) {
       console.log(`📺 Found episode, getting series TMDB ID: ${seriesTmdbId}`);
       
       // Get series details via proxy
-      const seriesUrl = `${CONFIG.tmdb.proxyBaseUrl}/tv/${seriesTmdbId}?language=hu-HU`;
-      const seriesResponse = await fetch(seriesUrl, { headers: { 'x-app-token': CONFIG.tmdb.appToken } });
+      const seriesUrl = tmdbUrl(`/tv/${seriesTmdbId}`, { language: 'hu-HU' });
+      const seriesResponse = await fetch(seriesUrl);
       
       if (seriesResponse.ok) {
         const seriesData = await seriesResponse.json();
@@ -135,8 +146,8 @@ async function getMovieInfoFromImdb(imdbId) {
 async function getHungarianMovieTitle(tmdbId) {
   try {
     // Get Hungarian version first via proxy
-    const hunUrl = `${CONFIG.tmdb.proxyBaseUrl}/movie/${tmdbId}?language=hu-HU`;
-    const hunResponse = await fetch(hunUrl, { headers: { 'x-app-token': CONFIG.tmdb.appToken } });
+    const hunUrl = tmdbUrl(`/movie/${tmdbId}`, { language: 'hu-HU' });
+    const hunResponse = await fetch(hunUrl);
     
     if (hunResponse.ok) {
       const hunData = await hunResponse.json();
@@ -147,8 +158,8 @@ async function getHungarianMovieTitle(tmdbId) {
     }
     
     // Try alternative titles via proxy
-    const altUrl = `${CONFIG.tmdb.proxyBaseUrl}/movie/${tmdbId}/alternative_titles`;
-    const altResponse = await fetch(altUrl, { headers: { 'x-app-token': CONFIG.tmdb.appToken } });
+    const altUrl = tmdbUrl(`/movie/${tmdbId}/alternative_titles`);
+    const altResponse = await fetch(altUrl);
     
     if (altResponse.ok) {
       const altData = await altResponse.json();
@@ -174,8 +185,8 @@ async function getHungarianMovieTitle(tmdbId) {
 async function getHungarianSeriesTitle(tmdbId) {
   try {
     // Get Hungarian version first via proxy
-    const hunUrl = `${CONFIG.tmdb.proxyBaseUrl}/tv/${tmdbId}?language=hu-HU`;
-    const hunResponse = await fetch(hunUrl, { headers: { 'x-app-token': CONFIG.tmdb.appToken } });
+    const hunUrl = tmdbUrl(`/tv/${tmdbId}`, { language: 'hu-HU' });
+    const hunResponse = await fetch(hunUrl);
     
     if (hunResponse.ok) {
       const hunData = await hunResponse.json();
@@ -186,8 +197,8 @@ async function getHungarianSeriesTitle(tmdbId) {
     }
     
     // Try alternative titles via proxy
-    const altUrl = `${CONFIG.tmdb.proxyBaseUrl}/tv/${tmdbId}/alternative_titles`;
-    const altResponse = await fetch(altUrl, { headers: { 'x-app-token': CONFIG.tmdb.appToken } });
+    const altUrl = tmdbUrl(`/tv/${tmdbId}/alternative_titles`);
+    const altResponse = await fetch(altUrl);
     
     if (altResponse.ok) {
       const altData = await altResponse.json();
@@ -211,8 +222,8 @@ async function getHungarianSeriesTitle(tmdbId) {
 
 async function getEpisodeInfo(tmdbId, season, episode) {
   try {
-    const url = `${CONFIG.tmdb.proxyBaseUrl}/tv/${tmdbId}/season/${season}/episode/${episode}`;
-    const response = await fetch(url, { headers: { 'x-app-token': CONFIG.tmdb.appToken } });
+    const url = tmdbUrl(`/tv/${tmdbId}/season/${season}/episode/${episode}`);
+    const response = await fetch(url);
     
     if (!response.ok) {
       throw new Error(`TMDB episode API error: ${response.status}`);
@@ -472,10 +483,14 @@ async function extractRpmIdFromHdmozi(hdmoziUrl) {
     const html = await response.text();
     console.log(`📄 Got HDMozi HTML (${html.length} chars)`);
     
-    // DEBUG: Save HTML to file to see what we actually get
-    const fs = require('fs');
-    fs.writeFileSync('hdmozi_debug.html', html);
-    console.log(`💾 Saved HTML to hdmozi_debug.html for inspection`);
+    // DEBUG: Save HTML to file when explicitly enabled (use /tmp on serverless)
+    if (process.env.DEBUG_HDMOZI_HTML === '1') {
+      const fs = require('fs');
+      const path = require('path');
+      const debugPath = path.join('/tmp', 'hdmozi_debug.html');
+      fs.writeFileSync(debugPath, html);
+      console.log(`💾 Saved HTML to ${debugPath} for inspection`);
+    }
 
     // 1) Try to extract RPM ID directly from iframe/src
     {
@@ -1399,184 +1414,96 @@ app.get('/manifest.json', (req, res) => {
     resources: ['stream'],
     types: ['movie', 'series'],
     catalogs: [],
-    idPrefixes: ['tt'], // IMDB IDs - FlixNest compatibility
+    idPrefixes: ['tt'],
     behaviorHints: {
-      configurable: false, // No config required - ready to use
-      configurationRequired: false,
-      searchQueryType: 'imdb' // ✅ FlixNest sends IMDB IDs (tt1234567 or tt1234567:1:5)
+      configurable: false,
+      configurationRequired: false
     }
   };
   
   res.json(manifest);
 });
 
-// 🎬 FLIXNEST STREAM ENDPOINT (q parameter format)
-app.get('/stream', async (req, res) => {
+function buildStreamHeaders(stream) {
   try {
-    const query = req.query.q;
-    
-    if (!query) {
-      return res.status(400).json({
-        streams: [],
-        error: 'Missing search query parameter "q"'
-      });
+    if (stream.source === 'videa-web') {
+      return {
+        'User-Agent': CONFIG.hdmozi.userAgent,
+        'Referer': 'https://videa.hu/'
+      };
     }
-    
-    console.log(`🎬 FlixNest stream request: q=${query}`);
-    
-    let result;
-    let imdbId, season, episode, contentType;
-    
-    // Parse FlixNest query format
-    if (query.startsWith('tt')) {
-      // IMDB ID format: "tt1234567" or "tt1234567:1:5"
-      if (query.includes(':')) {
-        const parts = query.split(':');
-        imdbId = parts[0];
-        season = parseInt(parts[1]);
-        episode = parseInt(parts[2]);
-        contentType = 'tv';
-        console.log(`🆔 Series: ${imdbId} S${season}E${episode}`);
-      } else {
-        imdbId = query;
-        contentType = 'movie';
-        console.log(`🆔 Movie: ${imdbId}`);
-      }
-      
-      // Extract using IMDB workflow
-      result = await extractStreamFromImdb(imdbId, season, episode);
-      
-    } else if (query.startsWith('rpm:')) {
-      // Legacy RPM ID (backward compatibility)
-      const videoId = query.replace('rpm:', '');
-      console.log(`🔧 Legacy RPM ID: ${videoId}`);
-      result = await extractRpmStream(videoId);
-      contentType = 'movie'; // Default
-      
-    } else {
-      // Unknown format
-      console.log(`❓ Unknown query format: ${query}`);
-      return res.json({ streams: [] });
+    const u = new URL(stream.url);
+    const base = `${u.protocol}//${u.host}`;
+    if (u.hostname.includes('rpmstream.live')) {
+      return {
+        'User-Agent': CONFIG.rpm.userAgent,
+        'Referer': CONFIG.rpm.baseUrl,
+        'Origin': CONFIG.rpm.baseUrl
+      };
     }
-    
-    // Convert to FlixNest stream format
-    const flixnestStreams = result.streams.map(stream => ({
-      // Required fields
-      title: `🇭🇺 ${result.title}`,
-      url: stream.url,
-      sourceTitle: "HDMozi→RPM Magyar",
-      
-      // Optional fields
-      subtitles: result.subtitles || [],
-      headers: (() => {
-        try {
-          if (stream.source === 'videa-web') {
-            return {
-              "User-Agent": CONFIG.hdmozi.userAgent,
-              "Referer": "https://videa.hu/"
-            };
-          }
-          const u = new URL(stream.url);
-          const base = `${u.protocol}//${u.host}`;
-          if (u.hostname.includes('rpmstream.live')) {
-            return {
-              "User-Agent": CONFIG.rpm.userAgent,
-              "Referer": CONFIG.rpm.baseUrl,
-              // Some mirrors now require Origin in addition to Referer
-              "Origin": CONFIG.rpm.baseUrl
-            };
-          }
-          // Direct IP or other host: self-origin headers
-          return {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-            "Referer": base,
-            "Origin": base,
-            "Accept": "*/*",
-            "Accept-Encoding": "gzip, deflate",
-            "Connection": "keep-alive"
-          };
-        } catch (e) {
-          return {
-            "User-Agent": CONFIG.rpm.userAgent,
-            "Referer": CONFIG.rpm.baseUrl,
-            "Origin": CONFIG.rpm.baseUrl
-          };
-        }
-      })(),
-      isWebView: stream.type === 'web',
-      isTorrent: false,
-      quality: stream.quality || "auto",
-      
-      // Metadata for FlixNest
-      imdbId: imdbId || undefined,
-      contentType: contentType,
-      seasonNumber: season || undefined,
-      episodeNumber: episode || undefined
-    }));
-    
-    console.log(`📊 Returning ${flixnestStreams.length} streams for: ${query}`);
-    
-    res.json({
-      streams: flixnestStreams
-    });
-    
-  } catch (error) {
-    console.error(`❌ FlixNest stream endpoint error: ${error.message}`);
-    res.status(500).json({
-      streams: [],
-      error: error.message
-    });
+    return {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+      'Referer': base,
+      'Origin': base,
+      'Accept': '*/*',
+      'Accept-Encoding': 'gzip, deflate',
+      'Connection': 'keep-alive'
+    };
+  } catch (e) {
+    return {
+      'User-Agent': CONFIG.rpm.userAgent,
+      'Referer': CONFIG.rpm.baseUrl,
+      'Origin': CONFIG.rpm.baseUrl
+    };
   }
-});
+}
 
-// 🔄 LEGACY STREMIO ENDPOINT (backward compatibility)
+function buildStremioStreams(result) {
+  const subtitles = result.subtitles || [];
+  return result.streams.map(stream => ({
+    name: 'HDMozi→RPM Magyar',
+    title: `🇭🇺 ${result.title}${stream.quality ? ` • ${stream.quality}` : ''}`,
+    url: stream.url,
+    subtitles,
+    behaviorHints: {
+      proxyHeaders: {
+        request: buildStreamHeaders(stream)
+      },
+      notWebReady: stream.type === 'web'
+    }
+  }));
+}
+
+// 🎬 STREMIO STREAM ENDPOINT
 app.get('/stream/:type/:id.json', async (req, res) => {
   try {
     const { type, id } = req.params;
-    console.log(`🔧 Legacy Stremio request: ${type} - ${id}`);
-    
-    // Convert to FlixNest query format
-    const query = id.startsWith('rpm:') ? id : (id.startsWith('tt') ? id : `rpm:${id}`);
-    
-    // Manually call the stream logic
-    req.query = { q: query };
+    console.log(`🎬 Stremio stream request: ${type} - ${id}`);
     
     let result;
-    let imdbId, season, episode, contentType;
+    let imdbId, season, episode;
     
-    // Parse query format
-    if (query.startsWith('tt')) {
-      if (query.includes(':')) {
-        const parts = query.split(':');
+    if (id.startsWith('tt')) {
+      if (id.includes(':')) {
+        const parts = id.split(':');
         imdbId = parts[0];
-        season = parseInt(parts[1]);
-        episode = parseInt(parts[2]);
-        contentType = 'tv';
+        season = parseInt(parts[1], 10);
+        episode = parseInt(parts[2], 10);
       } else {
-        imdbId = query;
-        contentType = 'movie';
+        imdbId = id;
       }
-      result = await extractStreamFromImdb(imdbId, season, episode);
-    } else if (query.startsWith('rpm:')) {
-      const videoId = query.replace('rpm:', '');
-      result = await extractRpmStream(videoId);
-      contentType = 'movie';
     } else {
       return res.json({ streams: [] });
     }
+
+    result = await extractStreamFromImdb(imdbId, season, episode);
     
-    // Return legacy Stremio format (simpler)
     res.json({
-      streams: result.streams.map(stream => ({
-        url: stream.url,
-        quality: stream.quality,
-        title: `🇭🇺 ${result.title}`,
-        subtitles: result.subtitles || []
-      }))
+      streams: buildStremioStreams(result)
     });
     
   } catch (error) {
-    console.error(`❌ Legacy endpoint error: ${error.message}`);
+    console.error(`❌ Stremio endpoint error: ${error.message}`);
     res.json({ streams: [] });
   }
 });
@@ -1730,7 +1657,7 @@ app.get('/', (req, res) => {
         <div class="status">
             <h3>📊 Status:</h3>
             <p><span class="ready">✅ READY TO USE</span> - No configuration required!</p>
-            <p><strong>TMDB Proxy:</strong> ${CONFIG.tmdb.appToken ? '✅ Token present' : '❌ Missing APP_TOKEN'}</p>
+            <p><strong>TMDB API:</strong> ✅ Hardcoded key</p>
             <p><strong>HDMozi:</strong> ✅ Scraping ready</p>
             <p><strong>RPM Share:</strong> ✅ M3U8 extraction ready</p>
         </div>
@@ -1738,21 +1665,21 @@ app.get('/', (req, res) => {
         <div class="workflow">
             <h3>🔄 Automatic Workflow:</h3>
             <ol>
-                <li><strong>FlixNest</strong> sends IMDB ID (tt1234567 or tt1234567:1:5)</li>
+                <li><strong>Stremio</strong> sends IMDB ID (tt1234567 vagy tt1234567:1:5)</li>
                 <li><strong>TMDB API</strong> → Film/sorozat cím + évad/epizód info</li>
                 <li><strong>HDMozi URL</strong> → Automatikus URL építés</li>
                 <li><strong>HDMozi scraping</strong> → RPM Share ID kinyerése</li>
                 <li><strong>RPM extraction</strong> → M3U8 stream URL-ek + feliratok</li>
-                <li><strong>FlixNest ExoPlayer</strong> → Lejátszás</li>
+                <li><strong>Stremio lejátszó</strong> → Lejátszás</li>
             </ol>
         </div>
         
         <div class="test-links">
             <h3>🧪 Test Endpoints:</h3>
-            <h4>🆔 IMDB-based (FlixNest format):</h4>
+            <h4>🆔 IMDB-based (Stremio format):</h4>
             <ul>
-                <li><a href="/stream?q=tt13623632:1:1">/stream?q=tt13623632:1:1</a> - Alien: Föld S01E01</li>
-                <li><a href="/stream?q=tt28996126">/stream?q=tt28996126</a> - Senki 2</li>
+                <li><a href="/stream/series/tt13623632:1:1.json">/stream/series/tt13623632:1:1.json</a> - Alien: Föld S01E01</li>
+                <li><a href="/stream/movie/tt28996126.json">/stream/movie/tt28996126.json</a> - Senki 2</li>
             </ul>
             
             <h4>🔧 Manual tests:</h4>
@@ -1761,7 +1688,7 @@ app.get('/', (req, res) => {
                 <li><a href="/test/imdb/tt28996126">/test/imdb/tt28996126</a> - Senki 2 TMDB lookup</li>
             </ul>
             
-            <h4>📱 FlixNest Integration:</h4>
+            <h4>📱 Stremio Integration:</h4>
             <p><strong>Manifest URL:</strong></p>
             <p><code>${req.protocol}://${req.get('host')}/manifest.json</code></p>
             <p><a href="/manifest.json">📋 View Manifest</a></p>
@@ -1783,177 +1710,33 @@ app.get('/', (req, res) => {
   `);
 });
 
-// 🌐 PUBLIC PREFIXED ENDPOINTS FOR HOSTED ADDON (e.g., /addon/magyaraddon)
-const ADDON_BASE = '/addon/magyaraddon';
-
-// Health check
-app.get(`${ADDON_BASE}/health`, (req, res) => {
-  res.json({ ok: true, name: 'HDMozi→RPM Magyar', version: '2.0.0' });
-});
-
-// Prefixed manifest
-app.get(`${ADDON_BASE}/manifest.json`, (req, res) => {
-  const manifest = {
-    id: 'streamapp.magyarfilmeksorozatok.hdmozi',
-    version: '2.0.0',
-    name: 'HDMozi→RPM Magyar',
-    description: '🇭🇺 Magyar filmek és sorozatok HDMozi-ról automatikus RPM streamekkel (IMDB alapú)',
-    logo: 'https://dl.stremio.com/addon-logo.png',
-    background: 'https://dl.stremio.com/addon-background.jpg',
-    resources: ['stream'],
-    types: ['movie', 'series'],
-    catalogs: [],
-    idPrefixes: ['tt'],
-    behaviorHints: {
-      configurable: false,
-      configurationRequired: false,
-      searchQueryType: 'imdb'
-    }
-  };
-  res.json(manifest);
-});
-
-// Prefixed FlixNest stream endpoint (?q=...)
-app.get(`${ADDON_BASE}/stream`, async (req, res) => {
-  try {
-    const query = req.query.q;
-    if (!query) return res.status(400).json({ streams: [], error: 'Missing search query parameter "q"' });
-
-    console.log(`🎬 [prefixed] FlixNest stream request: q=${query}`);
-
-    let result;
-    let imdbId, season, episode, contentType;
-
-    if (query.startsWith('tt')) {
-      if (query.includes(':')) {
-        const parts = query.split(':');
-        imdbId = parts[0];
-        season = parseInt(parts[1]);
-        episode = parseInt(parts[2]);
-        contentType = 'tv';
-      } else {
-        imdbId = query;
-        contentType = 'movie';
-      }
-      result = await extractStreamFromImdb(imdbId, season, episode);
-    } else if (query.startsWith('rpm:')) {
-      const videoId = query.replace('rpm:', '');
-      result = await extractRpmStream(videoId);
-      contentType = 'movie';
-    } else {
-      return res.json({ streams: [] });
-    }
-
-    const flixnestStreams = result.streams.map(stream => ({
-      title: `🇭🇺 ${result.title}`,
-      url: stream.url,
-      sourceTitle: 'HDMozi→RPM Magyar',
-      subtitles: result.subtitles || [],
-      headers: stream.source === 'videa-web' ? { 'User-Agent': CONFIG.hdmozi.userAgent, 'Referer': 'https://videa.hu/' } : { 'User-Agent': CONFIG.rpm.userAgent, 'Referer': CONFIG.rpm.baseUrl },
-      isWebView: stream.type === 'web',
-      isTorrent: false,
-      quality: stream.quality || 'auto',
-      imdbId: imdbId || undefined,
-      contentType,
-      seasonNumber: season || undefined,
-      episodeNumber: episode || undefined
-    }));
-
-    res.json({ streams: flixnestStreams });
-  } catch (error) {
-    console.error(`❌ Prefixed stream error: ${error.message}`);
-    res.status(500).json({ streams: [], error: error.message });
-  }
-});
-
-// Prefixed legacy Stremio endpoint
-app.get(`${ADDON_BASE}/stream/:type/:id.json`, async (req, res) => {
-  try {
-    const { type, id } = req.params;
-    console.log(`🔧 [prefixed] Legacy Stremio request: ${type} - ${id}`);
-
-    const query = id.startsWith('rpm:') ? id : (id.startsWith('tt') ? id : `rpm:${id}`);
-    req.query = { q: query };
-
-    let result;
-    let imdbId, season, episode, contentType;
-
-    if (query.startsWith('tt')) {
-      if (query.includes(':')) {
-        const parts = query.split(':');
-        imdbId = parts[0];
-        season = parseInt(parts[1]);
-        episode = parseInt(parts[2]);
-        contentType = 'tv';
-      } else {
-        imdbId = query;
-        contentType = 'movie';
-      }
-      result = await extractStreamFromImdb(imdbId, season, episode);
-    } else if (query.startsWith('rpm:')) {
-      const videoId = query.replace('rpm:', '');
-      result = await extractRpmStream(videoId);
-      contentType = 'movie';
-    } else {
-      return res.json({ streams: [] });
-    }
-
-    res.json({
-      streams: result.streams.map(stream => ({
-        url: stream.url,
-        quality: stream.quality,
-        title: `🇭🇺 ${result.title}`,
-        subtitles: result.subtitles || []
-      }))
-    });
-  } catch (error) {
-    console.error(`❌ Prefixed legacy endpoint error: ${error.message}`);
-    res.json({ streams: [] });
-  }
-});
-
-// Prefixed home/info
-app.get(`${ADDON_BASE}`, (req, res) => {
-  const base = `${req.protocol}://${req.get('host')}${ADDON_BASE}`;
-  res.send(`<!DOCTYPE html><html><head><title>HDMozi→RPM Magyar</title></head><body style="font-family:Arial;background:#1a1a1a;color:#fff;padding:24px">
-    <h2>🇭🇺 HDMozi→RPM Magyar Addon</h2>
-    <p>Status: <b style="color:#4caf50">OK</b></p>
-    <h3>Endpoints</h3>
-    <ul>
-      <li><a style="color:#4ea3ff" href="${base}/manifest.json">${base}/manifest.json</a></li>
-      <li><a style="color:#4ea3ff" href="${base}/stream?q=tt13623632:1:1">${base}/stream?q=tt13623632:1:1</a></li>
-      <li><a style="color:#4ea3ff" href="${base}/stream/series/tt13623632:1:1.json">${base}/stream/series/tt13623632:1:1.json</a></li>
-    </ul>
-  </body></html>`);
-});
-
-// 🚀 START SERVER
-app.listen(PORT, () => {
-  console.log('🇭🇺 HDMozi→RPM Magyar Addon v2.0');
-  console.log('=====================================');
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📱 FlixNest Manifest: http://localhost:${PORT}/manifest.json`);
-  console.log(`🏠 Info Page: http://localhost:${PORT}/`);
-  console.log(`📱 Hosted Manifest (prefixed): http://localhost:${PORT}${ADDON_BASE}/manifest.json`);
-  console.log(`🏠 Hosted Info (prefixed): http://localhost:${PORT}${ADDON_BASE}`);
-  console.log('');
-  console.log('🎯 FlixNest Integration Ready:');
-  console.log('   ✅ IMDB-based search (behaviorHints.searchQueryType: "imdb")');
-  console.log('   ✅ Movie & Series support');
-  console.log('   ✅ Season/Episode parsing (tt1234567:1:5)');
-  console.log('   ✅ HDMozi scraping → RPM extraction → M3U8 streams');
-  console.log('');
-  console.log('🧪 Quick Tests:');
-  console.log(`   🎬 Csupasz Pisztoly 33⅓: http://localhost:${PORT}/stream?q=tt3402138`);
-  console.log(`   📺 Breaking Bad S01E01: http://localhost:${PORT}/stream?q=tt0903747:1:1`);
-  console.log(`   📺 Alien Föld S01E01: http://localhost:${PORT}/stream?q=tt13623632:1:1`);
-  console.log('');
-  console.log('📊 Status:');
-  console.log(`   TMDB Proxy: ${CONFIG.tmdb.appToken ? '✅ Token present' : '❌ Missing APP_TOKEN'}`);
-  console.log('   HDMozi: ✅ Ready');
-  console.log('   RPM Share: ✅ Ready');
-  console.log('');
-  console.log('🎉 Magyar content streaming ready for FlixNest!');
-});
+// 🚀 START SERVER (skip on Vercel serverless)
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log('🇭🇺 HDMozi→RPM Magyar Addon v2.0');
+    console.log('=====================================');
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📱 Stremio Manifest: http://localhost:${PORT}/manifest.json`);
+    console.log(`🏠 Info Page: http://localhost:${PORT}/`);
+    console.log('');
+    console.log('🎯 Stremio Integration Ready:');
+    console.log('   ✅ IMDB-based search (tt1234567 or tt1234567:1:5)');
+    console.log('   ✅ Movie & Series support');
+    console.log('   ✅ Season/Episode parsing (tt1234567:1:5)');
+    console.log('   ✅ HDMozi scraping → RPM extraction → M3U8 streams');
+    console.log('');
+    console.log('🧪 Quick Tests:');
+    console.log(`   🎬 Csupasz Pisztoly 33⅓: http://localhost:${PORT}/stream/movie/tt3402138.json`);
+    console.log(`   📺 Breaking Bad S01E01: http://localhost:${PORT}/stream/series/tt0903747:1:1.json`);
+    console.log(`   📺 Alien Föld S01E01: http://localhost:${PORT}/stream/series/tt13623632:1:1.json`);
+    console.log('');
+    console.log('📊 Status:');
+    console.log('   TMDB API: ✅ Hardcoded key');
+    console.log('   HDMozi: ✅ Ready');
+    console.log('   RPM Share: ✅ Ready');
+    console.log('');
+    console.log('🎉 Magyar content streaming ready for Stremio!');
+  });
+}
 
 module.exports = app;
