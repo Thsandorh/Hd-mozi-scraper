@@ -1,5 +1,5 @@
 function renderHomePage(manifestUrl) {
-  const installUrl = `stremio://install?manifest=${encodeURIComponent(manifestUrl)}`;
+  const encodedManifestUrl = encodeURIComponent(manifestUrl);
   return `
     <!DOCTYPE html>
     <html lang="en">
@@ -96,11 +96,6 @@ function renderHomePage(manifestUrl) {
             border: 1px solid var(--border);
             color: var(--text);
           }
-          .btn-discord {
-            background: linear-gradient(135deg, #5865f2, #4752c4);
-            color: #f4f6ff;
-            box-shadow: 0 10px 24px rgba(88, 101, 242, 0.35);
-          }
           .btn:hover { transform: translateY(-1px); }
           .grid {
             display: grid;
@@ -164,9 +159,8 @@ function renderHomePage(manifestUrl) {
                   automatic RPM extraction and IMDB-based matching.
                 </p>
                 <div class="cta-group">
-                  <a class="btn btn-primary" href="${installUrl}">Add to Stremio</a>
+                  <a class="btn btn-primary" href="stremio://install?manifest=${encodedManifestUrl}">Add to Stremio</a>
                   <a class="btn btn-secondary" href="/manifest.json">View Manifest</a>
-                  <a class="btn btn-discord" href="https://discord.gg/wAqzj96Shz" target="_blank" rel="noreferrer">Join Discord</a>
                 </div>
               </div>
               <div class="card">
@@ -199,6 +193,14 @@ function renderHomePage(manifestUrl) {
                 <li><a href="/stream/movie/tt28996126.json">Nobody 2</a></li>
                 <li><a href="/test/imdb/tt13623632">TMDB lookup (series)</a></li>
                 <li><a href="/test/imdb/tt28996126">TMDB lookup (movie)</a></li>
+              </ul>
+            </div>
+            <div class="card">
+              <h3>Endpoints</h3>
+              <ul class="list">
+                <li><a href="/manifest.json">Manifest JSON</a></li>
+                <li><a href="${manifestUrl}">${manifestUrl}</a></li>
+                <li><a href="/debug/html">Debug HTML helper</a></li>
               </ul>
             </div>
             <div class="card">
