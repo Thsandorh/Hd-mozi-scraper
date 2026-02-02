@@ -1,0 +1,14 @@
+{
+  "name": "hd-mozi-scraper",
+  "version": "1.0.0",
+  "description": "Vercel serverless addon for HDMozi RPM streams",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": "18.x"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}
