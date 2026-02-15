@@ -1,47 +1,16 @@
-const path = require('node:path');
 const { buildStremioStreams } = require('./stremio');
 const { extractStreamFromImdb } = require('./workflow');
 const { extractRpmStream } = require('./rpm');
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function extractStreamWithRetry(imdbId, season, episode) {
-  try {
-    const first = await extractStreamFromImdb(imdbId, season, episode);
-    if (first && Array.isArray(first.streams) && first.streams.length > 0) {
-      return first;
-    }
-
-    await sleep(400);
-    return extractStreamFromImdb(imdbId, season, episode);
-  } catch (firstError) {
-    console.warn(`Stream extraction first attempt failed: ${firstError.message}`);
-    await sleep(400);
-    return extractStreamFromImdb(imdbId, season, episode);
-  }
-}
-
 function registerRoutes(app) {
   // 🌐 STREMIO ADDON ENDPOINTS
   app.get('/manifest.json', (req, res) => {
-    const forwardedProto = req.headers['x-forwarded-proto'];
-    const forwardedHost = req.headers['x-forwarded-host'];
-    const protocol = Array.isArray(forwardedProto)
-      ? forwardedProto[0]
-      : forwardedProto || req.protocol;
-    const host = Array.isArray(forwardedHost)
-      ? forwardedHost[0]
-      : forwardedHost || req.get('host');
-    const basePath = req.baseUrl || '';
-
     const manifest = {
       id: 'streamapp.magyarfilmeksorozatok.hdmozi',
       version: '2.0.0',
       name: 'HDMozi→RPM Magyar',
       description: '🇭🇺 Magyar filmek és sorozatok HDMozi-ról automatikus RPM streamekkel (IMDB alapú)',
-      logo: `${protocol}://${host}${basePath}/logo.png`,
+      logo: 'https://dl.stremio.com/addon-logo.png',
       background: 'https://dl.stremio.com/addon-background.jpg',
       resources: ['stream'],
       types: ['movie', 'series'],
@@ -55,18 +24,10 @@ function registerRoutes(app) {
 
     res.json(manifest);
   });
-  app.get('/logo.png', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'assets', 'logo.png'));
-  });
 
   // 🎬 STREMIO STREAM ENDPOINT
   app.get('/stream/:type/:id.json', async (req, res) => {
     try {
-      res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-      res.set('Pragma', 'no-cache');
-      res.set('Expires', '0');
-      res.set('Surrogate-Control', 'no-store');
-
       const { type, id } = req.params;
       console.log(`🎬 Stremio stream request: ${type} - ${id}`);
 
@@ -86,7 +47,7 @@ function registerRoutes(app) {
         return res.json({ streams: [] });
       }
 
-      result = await extractStreamWithRetry(imdbId, season, episode);
+      result = await extractStreamFromImdb(imdbId, season, episode);
 
       res.json({
         streams: buildStremioStreams(result)
@@ -201,9 +162,8 @@ function registerRoutes(app) {
     const host = Array.isArray(forwardedHost)
       ? forwardedHost[0]
       : forwardedHost || req.get('host');
-    const basePath = req.baseUrl || '';
-    const manifestUrl = `${protocol}://${host}${basePath}/manifest.json`;
-    res.status(200).type('html').send(`
+    const manifestUrl = `${protocol}://${host}/manifest.json`;
+    res.send(`
     <!DOCTYPE html>
     <html>
     <head>
